@@ -8,31 +8,31 @@ const cors = require('cors');
 const qrcode = require('qrcode-terminal');
 
 const MONGO_URI = process.env.MONGO_URI;
-const port = process.env.PORT || 5000;
-
-let isReady = false;
+const port = 5000;
 
 async function start() {
   try {
-    if (!MONGO_URI) {
-      throw new Error('MONGO_URI is not defined in environment variables');
-    }
-
     await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB');
 
     const store = new MongoStore({ mongoose });
 
-    const client = new Client({
-      authStrategy: new RemoteAuth({
-        store,
-        backupSyncIntervalMs: 300000,
-      }),
-      puppeteer: {
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      },
-    });
+// Prevent storing new auth data (read-only mode)
+store.save = async () => {
+  console.log('Skipped saving auth data (read-only mode)');
+};
+
+const client = new Client({
+  authStrategy: new RemoteAuth({
+    store,
+    backupSyncIntervalMs: 300000, // this won't do anything now
+  }),
+  puppeteer: {
+    headless: false,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  },
+});
+
 
     client.on('qr', (qr) => {
       console.log('QR RECEIVED');
@@ -40,7 +40,6 @@ async function start() {
     });
 
     client.on('ready', () => {
-      isReady = true;
       console.log('WhatsApp client is ready!');
     });
 
@@ -49,25 +48,33 @@ async function start() {
     });
 
     client.on('disconnected', (reason) => {
-      isReady = false;
       console.log('Client disconnected:', reason);
     });
 
+    client.on('change_state', (state) => {
+      console.log('Client state changed:', state);
+    });
+
+    client.on('remote_session_saved', () => {
+      console.log('Remote session saved to MongoDB');
+    });
+
+    client.on('authenticated', () => {
+      console.log('Client authenticated successfully');
+    });
+
     client.initialize();
+
+    // Global error handlers for unhandled promise rejections
+    process.on('unhandledRejection', (reason, p) => {
+      console.error('Unhandled Rejection at:', p, 'reason:', reason);
+    });
 
     const app = express();
     app.use(cors());
     app.use(bodyParser.json());
 
-    app.get('/', (req, res) => {
-      res.send('WhatsApp Web API is running.');
-    });
-
     app.post('/send-whatsapp', async (req, res) => {
-      if (!isReady) {
-        return res.status(503).json({ message: 'WhatsApp client not ready yet' });
-      }
-
       const { phone, message, qrcode: qrcodeUrl } = req.body;
 
       if (!phone || !message) {
@@ -76,9 +83,8 @@ async function start() {
 
       try {
         const formattedPhone = phone + '@c.us';
-        let media;
         if (qrcodeUrl) {
-          media = await MessageMedia.fromUrl(qrcodeUrl, { unsafeMime: true });
+          const media = await MessageMedia.fromUrl(qrcodeUrl, { unsafeMime: true });
           await client.sendMessage(formattedPhone, media, { caption: message });
         } else {
           await client.sendMessage(formattedPhone, message);
@@ -91,8 +97,9 @@ async function start() {
     });
 
     app.listen(port, '0.0.0.0', () => {
-      console.log(`Server is running on http://0.0.0.0:${port}`);
+      console.log(`Server running on http://0.0.0.0:${port}`);
     });
+
   } catch (error) {
     console.error('Failed to start application:', error);
   }
