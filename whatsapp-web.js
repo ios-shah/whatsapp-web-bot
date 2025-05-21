@@ -28,7 +28,7 @@ const client = new Client({
     backupSyncIntervalMs: 300000, // this won't do anything now
   }),
   puppeteer: {
-    headless: false,
+    headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   },
 });
