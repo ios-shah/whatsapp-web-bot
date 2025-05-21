@@ -8,7 +8,8 @@ const cors = require('cors');
 const qrcode = require('qrcode-terminal');
 
 const MONGO_URI = process.env.MONGO_URI;
-const port = 5000;
+const port = process.env.PORT || 5000;
+
 
 async function start() {
   try {
@@ -97,8 +98,8 @@ const client = new Client({
     });
 
     app.listen(port, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${port}`);
-    });
+  console.log(`Server running on http://0.0.0.0:${port}`);
+});
 
   } catch (error) {
     console.error('Failed to start application:', error);
